@@ -1,15 +1,14 @@
 {
-    "name": "Flask App",
-    "version": "1.0",
-    "slug": "lazy_trader_flask",
-    "description": "A simple Flask application",
-    "arch": ["armhf", "armv7", "aarch64", "amd64", "i386"],
-    "startup": "services",
-    "boot": "auto",
-    "options": {},
-    "schema": {},
-    "ports": {
-      "5000/tcp": 5000
-    },
-    "image": "local/lazy_trader_flask"
+  "name": "Flask App",
+  "version": "1.0",
+  "slug": "lazy_trader_flask",
+  "description": "A simple Flask application",
+  "arch": ["armhf", "armv7", "aarch64", "amd64", "i386"],
+  "startup": "services",
+  "boot": "auto",
+  "options": {},
+  "schema": {},
+  "ports": {
+    "5000/tcp": 5000
   }
+}
