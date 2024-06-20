@@ -2,6 +2,7 @@ import yfinance as yf
 import mplfinance as mpf
 
 from datetime import date
+from .stock_lists import STOCK_LIST
 
 import csv
 
@@ -24,15 +25,16 @@ stocks = {
     "STX40":{"interval":"1wk"},
 }
 
-def get_stocks(stocks,file,interval="1d",period="3mo"):
-    with open(file, mode='r') as file:
-        reader = csv.reader(file)
-        next(reader)  # Skip the header row
-        for row in reader:
-            stocks[row[0].split(":")[-1]]={"interval":interval,"period":period}
-
-
-
+def get_stocks(exchanges):
+    stocks = {}
+    for exchange in exchanges:
+        if exchange in STOCK_LIST:
+            for stock in STOCK_LIST[exchange]["stocks"]:
+                temp_key_arr = [stock]
+                if str(STOCK_LIST[exchange]["yf_suffix"]!=""):
+                    temp_key_arr.append(STOCK_LIST[exchange]["yf_suffix"])
+                stocks[".".join(temp_key_arr)]=STOCK_LIST[exchange]["stocks"][stock]
+    return stocks
 
 def lazy_trader(row,previous_code):
     
@@ -90,7 +92,7 @@ def make_figure(df,stock):
     fig.savefig(stock+str(date.today()), dpi=300, bbox_inches='tight')
 
 def pre_process(stocks,stock):
-    stocks[stock]["ticker"]=yf.Ticker(stock+".JO")
+    stocks[stock]["ticker"]=yf.Ticker(stock)
     stock_df = stocks[stock]["ticker"].history(period=stocks[stock]["period"], interval=stocks[stock]["interval"])
 
     stocks[stock]["history"]=stock_df
@@ -101,15 +103,8 @@ def pre_process(stocks,stock):
     
 
 
-def main(max_count=1):
-    stocks = {
-        # "STXRES":{"interval":"1wk"},
-        # "STXFIN":{"interval":"1wk"},
-        # "STXIND":{"interval":"1wk"},
-        # "STX40":{"interval":"1wk"},
-    }
-    # Load JSE full list
-    get_stocks(stocks,"companies-list.csv",interval="1d")
+def get_buys(max_count=1,exchanges = []):
+    stocks = get_stocks(exchanges)
 
     count = 1
     for stock in stocks:
@@ -143,20 +138,10 @@ def main(max_count=1):
                     break
         except Exception as e:
             print(e)
-# main()
+            
 
-def get_open_positions():
-    stocks = {
-        # "STXRES":{"interval":"1wk"},
-        # "STXFIN":{"interval":"1d"},
-        "STXIND":{"interval":"1wk","period":"1y"},
-        # "STX40":{"interval":"1d"},
-        "NRP":{"interval":"1d","period":"3mo"},
-        "GRT":{"interval":"1d","period":"3mo"},
-        "INL":{"interval":"1d","period":"3mo"},
-        "SBK":{"interval":"1d","period":"3mo"},
-    }
-    
+def get_open_positions(stocks):
+        
     for stock in stocks:
         try:
         # if True:
@@ -179,6 +164,19 @@ def get_open_positions():
         except Exception as e:
             print(e)
 
-# main()
-get_open_positions()
-print("done")
+stocks = {
+        # "STXRES":{"interval":"1wk"},
+        # "STXFIN":{"interval":"1d"},
+        "STXIND":{"interval":"1wk","period":"1y"},
+        # "STX40":{"interval":"1d"},
+        "NRP":{"interval":"1d","period":"3mo"},
+        "GRT":{"interval":"1d","period":"3mo"},
+        "INL":{"interval":"1d","period":"3mo"},
+        "SBK":{"interval":"1d","period":"3mo"},
+    }
+
+
+# get_buys(max_count=1,exchanges=["jse","stx"])
+# get_open_positions(stocks)
+
+# print("done")
