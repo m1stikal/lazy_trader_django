@@ -2,7 +2,10 @@ import yfinance as yf
 import mplfinance as mpf
 
 from datetime import date
-from .stock_lists import STOCK_LIST
+from stock_lists import STOCK_LIST
+
+from io import BytesIO
+import matplotlib.pyplot as plt
 
 import csv
 
@@ -62,7 +65,7 @@ def lazy_trader(row,previous_code):
     return code,",".join(comment)
 
 
-def make_figure(df,stock):
+def make_figure(df,stock,save_local=False):
     ema_lines = [
         mpf.make_addplot(df['EMA_15'], color='blue', width=0.75, label='EMA 15'),
         mpf.make_addplot(df['EMA_30'], color='green', width=0.75, label='EMA 30'),
@@ -88,8 +91,20 @@ def make_figure(df,stock):
         if handles:
             ax.legend(loc='lower left')
 
-    # Save the figure
-    fig.savefig(stock+str(date.today()), dpi=300, bbox_inches='tight')
+    if save_local==True:
+        # Save the figure
+        fig.savefig(stock+str(date.today()), dpi=300, bbox_inches='tight')
+    else:
+
+        # Return figure
+        img = BytesIO()
+        fig.savefig(img, format='png', dpi=300, bbox_inches='tight')
+        img.seek(0)
+        plt.close(fig)  # Close the figure to free up memory
+
+        return img
+
+
 
 def pre_process(stocks,stock):
     stocks[stock]["ticker"]=yf.Ticker(stock)
@@ -104,13 +119,17 @@ def pre_process(stocks,stock):
 
 
 def get_buys(max_count=1,exchanges = []):
+    ret_obj = {
+        "non_buy":{},
+        "buy":{}
+    }
     stocks = get_stocks(exchanges)
 
     count = 1
     for stock in stocks:
         try:
         # if True:
-            print(stock)
+            
             
             pre_process(stocks,stock)
 
@@ -124,15 +143,16 @@ def get_buys(max_count=1,exchanges = []):
                 stock_df.at[index,'buy_state'] = previous_code+0
 
             if stock_df.iloc[-1]['buy_state'] == 1:
-                print(stock_df.iloc[-1]['buy_state'])
-                print(stock_df.iloc[-1]['comments'])
-                print(stock_df.iloc[-2]['buy_state'])
-                print(stock_df.iloc[-2]['comments'])
-                stock_df.to_csv(stock+".csv",index=True)
-                make_figure(df=stock_df,stock=stock)
-
-            
-
+                ret_obj['buy'][stock]={
+                    "states":[
+                        (stock_df.iloc[-1]['comments'],stock_df.iloc[-1]['buy_state']),
+                        (stock_df.iloc[-2]['comments'],stock_df.iloc[-2]['buy_state'])
+                    ],
+                    "dataframe":stock_df.to_json(orient='split'),
+                    "plot":make_figure(df=stock_df,stock=stock)
+                }
+                # stock_df.to_csv(stock+".csv",index=True)
+                
                 count = count + 1
                 if count>max_count:
                     break
@@ -141,6 +161,7 @@ def get_buys(max_count=1,exchanges = []):
             
 
 def get_open_positions(stocks):
+    
         
     for stock in stocks:
         try:
@@ -156,27 +177,29 @@ def get_open_positions(stocks):
             for index, row in stock_df.iterrows():
                 previous_code,stock_df.at[index,'comments'] = lazy_trader(row,previous_code)
                 stock_df.at[index,'buy_state'] = previous_code+0
+            stocks[stock]["last_state"]=(stock_df.iloc[-1]['comments'],stock_df.iloc[-1]['buy_state'])
+            stocks[stock]["dataframe"]=stock_df.to_json(orient='split')
+            stocks[stock]["plot"]=make_figure(df=stock_df,stock=stock)
 
-            print(stock_df.iloc[-1]['buy_state'])
-            print(stock_df.iloc[-1]['comments'])
 
-            make_figure(df=stock_df,stock=stock)
+            # print(stock_df.iloc[-1]['buy_state'])
+            # print(stock_df.iloc[-1]['comments'])
+
         except Exception as e:
             print(e)
 
-stocks = {
-        # "STXRES":{"interval":"1wk"},
-        # "STXFIN":{"interval":"1d"},
-        "STXIND":{"interval":"1wk","period":"1y"},
-        # "STX40":{"interval":"1d"},
-        "NRP":{"interval":"1d","period":"3mo"},
-        "GRT":{"interval":"1d","period":"3mo"},
-        "INL":{"interval":"1d","period":"3mo"},
-        "SBK":{"interval":"1d","period":"3mo"},
-    }
+# stocks = {
+#         # "STXRES":{"interval":"1wk"},
+#         # "STXFIN":{"interval":"1d"},
+#         "STXIND":{"interval":"1wk","period":"1y"},
+#         # "STX40":{"interval":"1d"},
+#         "NRP":{"interval":"1d","period":"3mo"},
+#         "GRT":{"interval":"1d","period":"3mo"},
+#         "INL":{"interval":"1d","period":"3mo"},
+#         "SBK":{"interval":"1d","period":"3mo"},
+#     }
 
 
 # get_buys(max_count=1,exchanges=["jse","stx"])
 # get_open_positions(stocks)
 
-# print("done")
