@@ -148,8 +148,8 @@ def get_buys(max_count=1,exchanges = []):
                         (stock_df.iloc[-1]['comments'],stock_df.iloc[-1]['buy_state']),
                         (stock_df.iloc[-2]['comments'],stock_df.iloc[-2]['buy_state'])
                     ],
-                    "dataframe":stock_df.to_json(orient='split'),
-                    "plot":make_figure(df=stock_df,stock=stock)
+                    # "dataframe":stock_df.to_json(orient='split'),
+                    # "plot":make_figure(df=stock_df,stock=stock)
                 }
                 # stock_df.to_csv(stock+".csv",index=True)
                 
@@ -178,8 +178,8 @@ def get_open_positions(stocks):
                 previous_code,stock_df.at[index,'comments'] = lazy_trader(row,previous_code)
                 stock_df.at[index,'buy_state'] = previous_code+0
             stocks[stock]["last_state"]=(stock_df.iloc[-1]['comments'],stock_df.iloc[-1]['buy_state'])
-            stocks[stock]["dataframe"]=stock_df.to_json(orient='split')
-            stocks[stock]["plot"]=make_figure(df=stock_df,stock=stock)
+            # stocks[stock]["dataframe"]=stock_df.to_json(orient='split')
+            # stocks[stock]["plot"]=make_figure(df=stock_df,stock=stock)
 
 
             # print(stock_df.iloc[-1]['buy_state'])
