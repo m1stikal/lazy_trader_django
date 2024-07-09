@@ -9,22 +9,23 @@ def hello():
     open_posistions = {
             # "STXRES":{"interval":"1wk"},
             # "STXFIN":{"interval":"1d"},
-            "STXIND":{"interval":"1wk","period":"1y"},
+            "STXIND.JO":{"interval":"1wk","period":"1y"},
             # "STX40":{"interval":"1d"},
-            "NRP":{"interval":"1d","period":"3mo"},
-            "GRT":{"interval":"1d","period":"3mo"},
-            "INL":{"interval":"1d","period":"3mo"},
-            "SBK":{"interval":"1d","period":"3mo"},
+            # "NRP.JO":{"interval":"1d","period":"3mo"},
+            "GRT.JO":{"interval":"1d","period":"3mo"},
+            "INL.JO":{"interval":"1d","period":"3mo"},
+            "SBK.JO":{"interval":"1d","period":"3mo"},
+            "FSR.JO":{"interval":"1d","period":"3mo"},
         }
 
 
-    # buys = get_buys(max_count=1,exchanges=["jse","stx"])
-    buys = {}
-    get_open_positions(open_posistions)
+    buys = get_buys(max_count=1,exchanges=["jse","stx"])
+    # buys = {}
+    ret_open = get_open_positions(open_posistions)
 
     # stock_df.to_csv(stock+".csv",index=True)
 
-    return {"buys":buys,"open_positions":open_posistions}
+    return {"buys":buys,"open_positions":ret_open}
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0')
+    app.run(host='0.0.0.0',port=5001)

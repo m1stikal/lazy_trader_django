@@ -7,7 +7,7 @@ from stock_lists import STOCK_LIST
 from io import BytesIO
 import matplotlib.pyplot as plt
 
-import csv
+from pprint import pprint
 
 
 row_legend = {
@@ -37,6 +37,8 @@ def get_stocks(exchanges):
                 if str(STOCK_LIST[exchange]["yf_suffix"]!=""):
                     temp_key_arr.append(STOCK_LIST[exchange]["yf_suffix"])
                 stocks[".".join(temp_key_arr)]=STOCK_LIST[exchange]["stocks"][stock]
+
+    pprint(stocks)
     return stocks
 
 def lazy_trader(row,previous_code):
@@ -142,13 +144,13 @@ def get_buys(max_count=1,exchanges = []):
                 previous_code,stock_df.at[index,'comments'] = lazy_trader(row,previous_code)
                 stock_df.at[index,'buy_state'] = previous_code+0
 
-            if stock_df.iloc[-1]['buy_state'] == 1:
+            if int(stock_df.iloc[-1]['buy_state']) == 1:
                 ret_obj['buy'][stock]={
                     "states":[
-                        (stock_df.iloc[-1]['comments'],stock_df.iloc[-1]['buy_state']),
-                        (stock_df.iloc[-2]['comments'],stock_df.iloc[-2]['buy_state'])
+                        (stock_df.iloc[-1]['comments'],int(stock_df.iloc[-1]['buy_state'])),
+                        (stock_df.iloc[-2]['comments'],int(stock_df.iloc[-2]['buy_state']))
                     ],
-                    # "dataframe":stock_df.to_json(orient='split'),
+                    "dataframe":stock_df.to_json(orient='split'),
                     # "plot":make_figure(df=stock_df,stock=stock)
                 }
                 # stock_df.to_csv(stock+".csv",index=True)
@@ -158,10 +160,12 @@ def get_buys(max_count=1,exchanges = []):
                     break
         except Exception as e:
             print(e)
+    pprint(ret_obj)
+    return ret_obj
             
 
 def get_open_positions(stocks):
-    
+    ret_obj = {}
         
     for stock in stocks:
         try:
@@ -177,9 +181,14 @@ def get_open_positions(stocks):
             for index, row in stock_df.iterrows():
                 previous_code,stock_df.at[index,'comments'] = lazy_trader(row,previous_code)
                 stock_df.at[index,'buy_state'] = previous_code+0
-            stocks[stock]["last_state"]=(stock_df.iloc[-1]['comments'],stock_df.iloc[-1]['buy_state'])
-            # stocks[stock]["dataframe"]=stock_df.to_json(orient='split')
+            
+            stocks[stock]["last_state"]=(stock_df.iloc[-1]['comments'],int(stock_df.iloc[-1]['buy_state']))
+            stocks[stock]["history"]=stock_df.to_json(orient='split')
             # stocks[stock]["plot"]=make_figure(df=stock_df,stock=stock)
+            ret_obj[stock]={}
+            ret_obj[stock]["last_state"]=(stock_df.iloc[-1]['comments'],int(stock_df.iloc[-1]['buy_state']))
+            
+            
 
 
             # print(stock_df.iloc[-1]['buy_state'])
@@ -187,6 +196,8 @@ def get_open_positions(stocks):
 
         except Exception as e:
             print(e)
+    pprint(ret_obj)
+    return ret_obj
 
 # stocks = {
 #         # "STXRES":{"interval":"1wk"},
