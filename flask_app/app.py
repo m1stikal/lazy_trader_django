@@ -12,14 +12,17 @@ def hello():
             "STXIND.JO":{"interval":"1wk","period":"1y"},
             # "STX40":{"interval":"1d"},
             # "NRP.JO":{"interval":"1d","period":"3mo"},
-            "GRT.JO":{"interval":"1d","period":"3mo"},
+            # "GRT.JO":{"interval":"1d","period":"3mo"},
             "INL.JO":{"interval":"1d","period":"3mo"},
-            "SBK.JO":{"interval":"1d","period":"3mo"},
+            # "SBK.JO":{"interval":"1d","period":"3mo"},
             "FSR.JO":{"interval":"1d","period":"3mo"},
+            "BTI.JO":{"interval":"1d","period":"3mo"},
+            "ANG.JO":{"interval":"1d","period":"3mo"},
+            
         }
 
 
-    buys = get_buys(max_count=1,exchanges=["jse","stx"])
+    buys = get_buys(max_count=4,exchanges=["jse","stx"])
     # buys = {}
     ret_open = get_open_positions(open_posistions)
 

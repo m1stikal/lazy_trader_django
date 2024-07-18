@@ -2,25 +2,103 @@ from django.shortcuts import render
 from .libs.yahoo_fin import get_open_positions,get_buys
 from django.http import JsonResponse
 
-# Create your views here.
+from django.views.generic.edit import CreateView, UpdateView, DeleteView
+from django.views.generic.list import ListView
+from django.urls import reverse_lazy
+from .models import Stock, OpenPosition
+from .forms import StockForm, OpenPositionForm
+
+from django.shortcuts import get_object_or_404
+
+from .utils import build_open_positions_dict
+
+
 def index(request):
-    open_posistions = {
-            # "STXRES":{"interval":"1wk"},
-            # "STXFIN":{"interval":"1d"},
-            "STXIND.JO":{"interval":"1wk","period":"1y"},
-            # "STX40":{"interval":"1d"},
-            # "NRP.JO":{"interval":"1d","period":"3mo"},
-            "GRT.JO":{"interval":"1d","period":"3mo"},
-            "INL.JO":{"interval":"1d","period":"3mo"},
-            "SBK.JO":{"interval":"1d","period":"3mo"},
-            "FSR.JO":{"interval":"1d","period":"3mo"},
-        }
+    # open_posistions = {
+    #         # "STXRES":{"interval":"1wk"},
+    #         # "STXFIN":{"interval":"1d"},
+    #         "STXIND.JO":{"interval":"1wk","period":"1y"},
+    #         # "STX40":{"interval":"1d"},
+    #         # "NRP.JO":{"interval":"1d","period":"3mo"},
+    #         "GRT.JO":{"interval":"1d","period":"3mo"},
+    #         "INL.JO":{"interval":"1d","period":"3mo"},
+    #         "SBK.JO":{"interval":"1d","period":"3mo"},
+    #         "FSR.JO":{"interval":"1d","period":"3mo"},
+    #     }
+    open_posistions = build_open_positions_dict()
+    # print(open_posistions)
 
 
-    buys = get_buys(max_count=1,exchanges=["jse","stx"])
-    # buys = {}
+    # buys = get_buys(max_count=1,exchanges=["jse","stx"])
+    buys = {}
     ret_open = get_open_positions(open_posistions)
 
     # stock_df.to_csv(stock+".csv",index=True)
-    pageData = {"buys":buys,"open_positions":ret_open}
-    return render(request,'dc/index.html',pageData)
+    pageData = {"buys":buys,"open_position_analysis":ret_open}
+    return render(request,'index.html',pageData)
+
+
+class StockCreateView(CreateView):
+    model = Stock
+    form_class = StockForm
+    template_name = 'stock_form.html'
+    success_url = reverse_lazy('stock_list')  # Replace 'stock_list' with your actual list view or desired URL
+
+class StockUpdateView(UpdateView):
+    model = Stock
+    form_class = StockForm
+    template_name = 'stock_form.html'
+    success_url = reverse_lazy('stock_list')  # Replace 'stock_list' with your actual list view or desired URL
+
+class StockListView(ListView):
+    model = Stock
+    template_name = 'stock_list.html'
+
+class StockDeleteView(DeleteView):
+    model = Stock
+    template_name = 'stock_confirm_delete.html'
+    success_url = reverse_lazy('stock_list')  # Redirects to the stock list after deletion
+
+    def get(self, request, *args, **kwargs):
+        """This method ensures that the delete view does not require a confirmation page."""
+        return self.post(request, *args, **kwargs)
+
+class OpenPositionCreateView(CreateView):
+    model = OpenPosition
+    form_class = OpenPositionForm
+    template_name = 'open_position_form.html'
+    success_url = reverse_lazy('open_position_list')  # Replace 'open_position_list' with your actual list view or desired URL
+
+class OpenPositionUpdateView(UpdateView):
+    model = OpenPosition
+    form_class = OpenPositionForm
+    template_name = 'open_position_form.html'
+    success_url = reverse_lazy('open_position_list')  # Replace 'open_position_list' with your actual list view or desired URL
+
+class OpenPositionListView(ListView):
+    model = OpenPosition
+    template_name = 'open_position_list.html'
+
+class OpenPositionDeleteView(DeleteView):
+    model = OpenPosition
+    template_name = 'open_position_confirm_delete.html'
+    success_url = reverse_lazy('open_position_list')  # Redirects to the list after deletion
+
+    def get(self, request, *args, **kwargs):
+        """This method ensures that the delete view does not require a confirmation page."""
+        return self.post(request, *args, **kwargs)
+
+class OpenPositionCreateForStockView(CreateView):
+    model = OpenPosition
+    form_class = OpenPositionForm
+    template_name = 'open_position_form.html'
+
+    def get_initial(self):
+        """Prepopulate the stock field of the form based on the stock_id URL parameter."""
+        stock_id = self.kwargs.get('stock_id')
+        stock = get_object_or_404(Stock, pk=stock_id)
+        return {'stock': stock}
+
+    def get_success_url(self):
+        """Redirect back to stock list or wherever is appropriate after creation."""
+        return reverse_lazy('open_position_list')

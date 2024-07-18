@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block body_block %}
+  <h2>Open Position Form</h2>
+  <form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">Save</button>
+  </form>
+  <a href="{% url 'open_position_list' %}">Back to list</a>
+{% endblock %}

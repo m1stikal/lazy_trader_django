@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block body_block %}
+  <h1>Open Position Analysis Results</h1>
+  <table>
+    <thead>
+      <tr>
+        <th>Stock Code</th>
+        <th>Description</th>
+        <th>Score</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for stock, details in open_position_analysis.items %}
+        <tr>
+          <td>{{ stock }}</td>
+          <td>{{ details.last_state.0 }}</td>
+          <td>{{ details.last_state.1 }}</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}
