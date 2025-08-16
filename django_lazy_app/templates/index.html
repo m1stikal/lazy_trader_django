@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% load base64_tags %}
+
+{% block body_block %}
+  <div class="container">
+    <h1>Open Position Analysis Results</h1>
+    <table>
+      <thead>
+        <tr>
+          <th>Stock Code</th>
+          <th>Stock Name</th>
+          <th>Description</th>
+          <th>Score</th>
+          <th>Plot</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for stock, details in open_position_analysis.items %}
+          <tr>
+            <td>{{ stock }}</td>
+            <td>{{ details.name }}</td>
+            <td>{{ details.last_state.0 }}</td>
+            <td>{{ details.last_state.1 }}</td>
+          </tr>
+          <tr>
+            <td colspan="5">{{ details.plot|safe }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Buy Analysis Results</h2>
+  {% for platform, data in buys.items %}
+    <h3>{{ platform | title }} Platform</h3>
+    {% for stock_code, info in data.buy.items %}
+      <div>
+        <h4>{{ stock_code }} - {{ info.name }}</h4>
+        <a href="https://finance.yahoo.com/quote/{{ stock_code }}/chart/?guccounter=1">Link to Yahoo Finance Chart for {{ stock_code }}</a>
+        <div>
+          {{ info.plot|safe }}
+        </div>
+        <a href="{% url 'create_open_position_by_code' stock_code|cut:".JO" %}">Create Open Position for {{ stock_code }}</a>
+      </div>
+    {% endfor %}
+  {% endfor %}
+
+{% endblock %}

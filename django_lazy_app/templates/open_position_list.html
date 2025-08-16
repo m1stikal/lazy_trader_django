@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block body_block %}
+  <h2>Open Position List</h2>
+  <ol>
+    {% for position in object_list %}
+      <li>
+        {{ position.stock }} - Active: {{ position.active }} - Interval: {{ position.interval }} - Period: {{ position.period }}
+        <a href="{% url 'open_position_update' position.id %}">Update</a>
+        <!-- Delete Button Form -->
+        <form action="{% url 'open_position_delete' position.id %}" method="post" style="display: inline;">
+          {% csrf_token %}
+          <button type="submit" onclick="return confirm('Are you sure you want to delete this open position?');">Delete</button>
+        </form>
+      </li>
+    {% endfor %}
+  </ol>
+  <!-- Create New Open Position Button -->
+  <a href="{% url 'open_position_create' %}">
+    <button type="button">Create New Open Position</button>
+  </a>
+{% endblock %}
