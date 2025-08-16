@@ -1,4 +1,4 @@
-#!/Users/m1stikal/Dev/lazy_trader_flask/venv/bin/python3.13
+#!/Users/m1stikal/Dev/lazy_trader_django/venv/bin/python
 # -*- coding: utf-8 -*-
 import re
 import sys

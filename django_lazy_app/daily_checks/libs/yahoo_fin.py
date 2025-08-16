@@ -1,244 +1,232 @@
+# daily_checks/libs/yahoo_fin.py
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from typing import Dict, Iterable, List, Mapping, Optional, Tuple
+
+import pandas as pd
 import yfinance as yf
-import plotly.graph_objects as go
-from plotly.offline import plot
 
-from datetime import date
-from .stock_lists import STOCK_LIST
-
-from pprint import pprint
-
+# Import your Django models directly (no apps.get_model, no exchange logic)
 from daily_checks.models import Stock,OpenPosition,Platform
 
-row_legend = {
-    -1:"Sell",
-    0:"Do Nothing",
-    1:"Buy",
-    # Specific Codes:
-    11:"Primary Trend Up",
-    12:"Close is Over 15 EMA, Wait for Second Confirm",
-    13:"Primary Trend is Down"
-}
+import os, certifi
+caf = certifi.where()
+os.environ["SSL_CERT_FILE"] = caf
+os.environ["REQUESTS_CA_BUNDLE"] = caf
+os.environ["CURL_CA_BUNDLE"] = caf
 
-def make_candlestick_plot(df, stock):
-    fig = go.Figure(data=[go.Candlestick(x=df.index,
-                open=df['Open'],
-                high=df['High'],
-                low=df['Low'],
-                close=df['Close'])])
+# --------------------------------------------------------------------
+# JSE suffix: ALWAYS append ".JO" to root codes when missing for Yahoo.
+# --------------------------------------------------------------------
 
-    fig.add_trace(go.Scatter(x=df.index, y=df['EMA_15'], line=dict(color='green'), name='EMA 15'))
-    fig.add_trace(go.Scatter(x=df.index, y=df['EMA_30'], line=dict(color='yellow'), name='EMA 30'))
-    fig.add_trace(go.Scatter(x=df.index, y=df['EMA_60'], line=dict(color='red'), name='EMA 60'))
-
-    fig.update_layout(
-        title=stock,
-        yaxis_title='Price',
-        xaxis_title='Date',
-    )
-    return plot(fig, output_type='div')
+JSE_SUFFIX = ".JO"
 
 
-stocks = {
-    "STXRES":{"interval":"1wk"},
-    "STXFIN":{"interval":"1wk"},
-    "STXIND":{"interval":"1wk"},
-    "STX40":{"interval":"1wk"},
-}
-
-def get_stocks_old(exchanges):
-    stocks = {}
-    for exchange in exchanges:
-        if exchange in STOCK_LIST:
-            for stock in STOCK_LIST[exchange]["stocks"]:
-                temp_key_arr = [stock]
-                if str(STOCK_LIST[exchange]["yf_suffix"]!=""):
-                    temp_key_arr.append(STOCK_LIST[exchange]["yf_suffix"])
-                stocks[".".join(temp_key_arr)]=STOCK_LIST[exchange]["stocks"][stock]
-
-    
-    return stocks
+def _to_yahoo(ticker_root: str) -> str:
+    t = (ticker_root or "").upper().strip()
+    return t if "." in t else f"{t}{JSE_SUFFIX}"
 
 
+# -----------------------------
+# Finance helpers
+# -----------------------------
 
-def get_stocks(exchanges):
-    # Dictionary to hold the results
-    result = {}
-    for exchange in exchanges:
-        platforms = Platform.objects.filter(code = exchange)
-        for platform in platforms:
+def _download(symbol: str, period: str = "6mo", interval: str = "1d") -> pd.DataFrame:
+    # Do NOT pass requests.Session; let yfinance manage its own session
+    df = yf.download(symbol, period=period, interval=interval, auto_adjust=True, progress=False)
+    if isinstance(df, pd.DataFrame) and not df.empty:
+        df = df.rename(columns={c: c.capitalize() for c in df.columns})
+    return df
 
-            temp_stocks = Stock.objects.filter(
-                platform=platform
-            ).exclude(
-                id__in=OpenPosition.objects.filter(stock__platform=platform).values_list('stock_id', flat=True)
-            )
-            for stock in temp_stocks:
-                temp_key_arr = [stock.code]
-                if stock.exchange_prefix != "":
-                    temp_key_arr.append(stock.exchange_prefix)
-                result[".".join(temp_key_arr)]={
-                    "interval":stock.default_interval,
-                    "period":stock.default_period
-                }
-    
-    
-    return result
 
-def lazy_trader(row,previous_code,previous_close=0):
-    
-    code = 0
-    comment = []
-    if row['EMA_30'] > row['EMA_60']:
-        code=11
-        comment.append("Primary Trend is up")
-        if row['Close'] > row['EMA_15']:
-            code = 12
-            comment.append('Close is over 15 EMA')
-            if previous_code == 12 and row['Close']>previous_close:
-                comment.append("Buy")
-                code = 1
-            else:
-                comment.append("Wait for second confirm")
-                
+def _sma(series: pd.Series, window: int) -> pd.Series:
+    return series.rolling(window=window, min_periods=window).mean()
+
+
+def _rsi(close: pd.Series, period: int = 14) -> pd.Series:
+    delta = close.diff()
+    up = delta.clip(lower=0.0)
+    down = -1 * delta.clip(upper=0.0)
+    ma_up = up.ewm(com=period - 1, adjust=False).mean()
+    ma_down = down.ewm(com=period - 1, adjust=False).mean()
+    rs = ma_up / ma_down.replace(0, 1e-9)
+    return 100.0 - (100.0 / (1.0 + rs))
+
+
+# -----------------------------
+# Public API
+# -----------------------------
+
+@dataclass
+class Position:
+    symbol: str
+    qty: float
+    avg_price: float
+
+
+def _pick_field(model, candidates: Iterable[str]) -> Optional[str]:
+    names = {f.name for f in model._meta.get_fields()}
+    for n in candidates:
+        if n in names:
+            return n
+    return None
+
+
+def get_open_positions(positions: Optional[Iterable[Mapping[str, float]]] = None) -> Dict[str, Dict[str, float]]:
+    """
+    If positions is provided (iterable of {symbol, qty, avg_price}), compute P&L.
+    If positions is None, pull from DB using OpenPosition + Stock (direct imports).
+    """
+    pos_list: List[Position] = []
+
+    if positions is None and OpenPosition is not None:
+        stock_fk = _pick_field(OpenPosition, ("stock", "instrument", "security", "asset")) or "stock"
+        qty_field = _pick_field(OpenPosition, ("qty", "quantity", "shares", "units")) or "qty"
+        price_field = _pick_field(OpenPosition, ("avg_price", "average_price", "avg_cost", "average_cost", "cost_basis", "price")) or "avg_price"
+        sym_field = _pick_field(Stock, ("code", "name")) or "code"
+
+        rows = OpenPosition.objects.values(qty_field, price_field, f"{stock_fk}__{sym_field}")
+        for r in rows:
+            code = r.get(f"{stock_fk}__{sym_field}")
+            if not code:
+                continue
+            try:
+                pos_list.append(
+                    Position(
+                        symbol=_to_yahoo(code),
+                        qty=float(r.get(qty_field) or 0),
+                        avg_price=float(r.get(price_field) or 0),
+                    )
+                )
+            except Exception:
+                continue
     else:
-        code = 13
-        comment.append("Primary Trend is down")
-    if row['Close'] < row['EMA_15']:
-        code = -1
-        comment.append('Close is below 15 EMA, SELL')
-    
-    return code,",".join(comment)
+        for rec in positions or []:
+            try:
+                pos_list.append(
+                    Position(
+                        symbol=_to_yahoo(rec["symbol"]),
+                        qty=float(rec["qty"]),
+                        avg_price=float(rec["avg_price"]),
+                    )
+                )
+            except Exception:
+                continue
+
+    out: Dict[str, Dict[str, float]] = {}
+    if not pos_list:
+        return out
+
+    # Batch price lookups
+    symbols = [p.symbol for p in pos_list]
+    quotes = yf.download(" ".join(symbols), period="5d", interval="1d", auto_adjust=True, progress=False)
+
+    last_prices: Dict[str, float] = {}
+    if isinstance(quotes, pd.DataFrame) and not quotes.empty:
+        if isinstance(quotes.columns, pd.MultiIndex):
+            for sym in symbols:
+                try:
+                    px = float(quotes["Close"][sym].dropna().iloc[-1])
+                    last_prices[sym] = px
+                except Exception:
+                    continue
+        else:
+            px = float(quotes["Close"].dropna().iloc[-1])
+            last_prices[symbols[0]] = px
+
+    for p in pos_list:
+        last = last_prices.get(p.symbol)
+        if last is None or math.isnan(last):
+            continue
+        pnl = (last - p.avg_price) * p.qty
+        change_pct = ((last / p.avg_price) - 1.0) * 100.0 if p.avg_price else 0.0
+        out[p.symbol] = {
+            "qty": p.qty,
+            "avg_price": round(p.avg_price, 6),
+            "last": round(last, 6),
+            "pnl": round(pnl, 2),
+            "pnl_pct": round(change_pct, 3),
+        }
+
+    return out
 
 
-import requests
-import certifi
-import os
+def get_buys(
+    *,
+    max_count: int = 5,
+    period: str = "6mo",
+    interval: str = "1d",
+    sma_fast: int = 50,
+    sma_slow: int = 200,
+    rsi_buy_below: Optional[float] = 60.0,
+    **_ignore,  # absorb any legacy kwargs like 'exchanges' without effect
+) -> Dict[str, Dict[str, float]]:
+    """
+    Screen ALL DB tickers from Stock and return one bucket:
+      {"buy": {...}, "non_buy": {...}}
+    All tickers are converted to Yahoo format by appending ".JO" when missing.
+    """
+    sym_field = _pick_field(Stock, ("code", "name")) or "code"
+    codes = list(Stock.objects.values_list(sym_field, flat=True).distinct())
+    symbols = [_to_yahoo(c) for c in codes if c]
 
-# def pre_process(stocks,stock):
-#     session = requests.Session()
-#     session.verify = certifi.where()
+    def analyse_symbol(sym: str) -> Tuple[bool, Dict[str, float]]:
+        df = _download(sym, period=period, interval=interval)
+        if df.empty:
+            return False, {"reason": "no_data"}
+        close = df["Close"].dropna()
+        sfast = _sma(close, sma_fast)
+        sslow = _sma(close, sma_slow)
+        rsi = _rsi(close, 14)
 
-#     stocks[stock]["ticker"]=yf.Ticker(stock)
-#     # stock_df = stocks[stock]["ticker"].history(period=stocks[stock]["period"], interval=stocks[stock]["interval"])
-#     stock_df = stocks[stock]["ticker"].history(period=stocks[stock]["period"], interval=stocks[stock]["interval"], session=session)
+        last = float(close.iloc[-1])
+        f = float(sfast.iloc[-1]) if not math.isnan(sfast.iloc[-1]) else None
+        s = float(sslow.iloc[-1]) if not math.isnan(sslow.iloc[-1]) else None
+        r = float(rsi.iloc[-1]) if not math.isnan(rsi.iloc[-1]) else None
 
-#     stocks[stock]["history"]=stock_df
+        trend_ok = f is not None and s is not None and last > f and f > s
+        rsi_ok = True if rsi_buy_below is None else (r is not None and r < rsi_buy_below)
 
-#     stock_df["EMA_15"]=stock_df['Close'].ewm(span=15, adjust=False).mean()
-#     stock_df["EMA_30"]=stock_df['Close'].ewm(span=30, adjust=False).mean()
-#     stock_df["EMA_60"]=stock_df['Close'].ewm(span=60, adjust=False).mean()
+        payload = {
+            "last": round(last, 6),
+            "sma_fast": round(f, 6) if f is not None else None,
+            "sma_slow": round(s, 6) if s is not None else None,
+            "rsi": round(r, 3) if r is not None else None,
+        }
+        return (trend_ok and rsi_ok), payload
 
-def pre_process(stocks, stock,session):
-    # session = requests.Session()
-    # session.verify = certifi.where()
+    def score(d: Dict[str, float]) -> float:
+        sc = 0.0
+        last = d.get("last"); f = d.get("sma_fast"); s = d.get("sma_slow"); r = d.get("rsi")
+        if last and f and f > 0:
+            sc += (last / f)
+        if f and s and s > 0:
+            sc += (f / s)
+        if r is not None:
+            sc += (100.0 - r) / 100.0
+        return sc
 
-    stocks[stock]["ticker"] = yf.Ticker(stock, session=session)  # <-- FIXED HERE
-    stock_df = stocks[stock]["ticker"].history(
-        period=stocks[stock]["period"], 
-        interval=stocks[stock]["interval"]
-    )
+    buy_bucket: Dict[str, Dict[str, float]] = {}
+    non_bucket: Dict[str, Dict[str, float]] = {}
 
-    stocks[stock]["history"] = stock_df
-
-    stock_df["EMA_15"] = stock_df['Close'].ewm(span=15, adjust=False).mean()
-    stock_df["EMA_30"] = stock_df['Close'].ewm(span=30, adjust=False).mean()
-    stock_df["EMA_60"] = stock_df['Close'].ewm(span=60, adjust=False).mean()
-    
-def get_buys(max_count=1,exchanges = []):
-    ret_obj = {
-        "non_buy":{},
-        "buy":{}
-    }
-
-    stocks = get_stocks(exchanges)
-    session = requests.Session()
-    session.verify = certifi.where()
-
-    yf.shared._session = session
-    count = 1
-    for stock in stocks:
+    for sym in symbols:
         try:
-        # if True:
-            pre_process(stocks,stock,session)
-
-            stock_df = stocks[stock]["history"]
-
-            stock_df['buy_state']=0
-            stock_df['comments']=""
-            previous_code = 0
-            previous_close = 0
-            for index, row in stock_df.iterrows():
-                previous_code,stock_df.at[index,'comments'] = lazy_trader(row,previous_code,previous_close=previous_close)
-                stock_df.at[index,'buy_state'] = previous_code+0
-                previous_close = row["Close"]
-
-            if int(stock_df.iloc[-1]['buy_state']) == 1:
-                ret_obj['buy'][stock]={
-                    "states":[
-                        (stock_df.iloc[-1]['comments'],int(stock_df.iloc[-1]['buy_state'])),
-                        (stock_df.iloc[-2]['comments'],int(stock_df.iloc[-2]['buy_state']))
-                    ],
-                    "dataframe":stock_df[-5:].to_json(orient='split'),
-                    "dataframe_html":stock_df[-5:].to_html(classes="table table-responsive"),
-                    "plot":make_candlestick_plot(stock_df,stock),
-                    "name": stocks[stock]["ticker"].info["longName"] if "longName" in stocks[stock]["ticker"].info else stock
-                }
-                # stock_df.to_csv(stock+".csv",index=True)
-                
-                count = count + 1
-                if count>max_count:
-                    break
+            ok, data = analyse_symbol(sym)
+            if ok:
+                buy_bucket[sym] = data | {"_score": score(data)}
+            else:
+                non_bucket[sym] = data
         except Exception as e:
-            print(e)
-    
-    return ret_obj
+            non_bucket[sym] = {"reason": f"error:{type(e).__name__}"}
 
-def get_open_positions(stocks):
-    ret_obj = {}
-    session = requests.Session()
-    session.verify = certifi.where()
-    yf.shared._session = session
-        
-    for stock in stocks:
-        try:
-        # if True:
-            
-            pre_process(stocks,stock,session)
+    if max_count and buy_bucket:
+        ranked = sorted(buy_bucket.items(), key=lambda kv: kv[1].get("_score", 0.0), reverse=True)[:max_count]
+        buy_bucket = {k: {kk: vv for kk, vv in v.items() if kk != "_score"} for k, v in ranked}
+    else:
+        for v in buy_bucket.values():
+            v.pop("_score", None)
 
-            stock_df = stocks[stock]["history"]
-
-            stock_df['buy_state']=0
-            stock_df['comments']=""
-            previous_code = 0
-            previous_close = 0
-            for index, row in stock_df.iterrows():
-                previous_code,stock_df.at[index,'comments'] = lazy_trader(row,previous_code,previous_close=previous_close)
-                stock_df.at[index,'buy_state'] = previous_code+0
-                previous_close = row["Close"]
-            
-            stocks[stock]["last_state"]=(stock_df.iloc[-1]['comments'],int(stock_df.iloc[-1]['buy_state']))
-            stocks[stock]["history"]=stock_df.to_json(orient='split')
-            ret_obj[stock]={}
-            ret_obj[stock]["last_state"]=(stock_df.iloc[-1]['comments'],int(stock_df.iloc[-1]['buy_state']))
-            ret_obj[stock]["name"]=stocks[stock]["name"]
-            ret_obj[stock]["plot"]=make_candlestick_plot(stock_df,stock)
-
-        except Exception as e:
-            print(e)
-    
-    return ret_obj
-
-# stocks = {
-#         # "STXRES":{"interval":"1wk"},
-#         # "STXFIN":{"interval":"1d"},
-#         "STXIND":{"interval":"1wk","period":"1y"},
-#         # "STX40":{"interval":"1d"},
-#         "NRP":{"interval":"1d","period":"3mo"},
-#         "GRT":{"interval":"1d","period":"3mo"},
-#         "INL":{"interval":"1d","period":"3mo"},
-#         "SBK":{"interval":"1d","period":"3mo"},
-#     }
-
-
-# get_buys(max_count=1,exchanges=["jse","stx"])
-# get_open_positions(stocks)
+    return {"buy": buy_bucket, "non_buy": non_bucket}
